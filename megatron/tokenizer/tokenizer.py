@@ -4,6 +4,7 @@
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Union, List
 
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
@@ -38,6 +39,8 @@ def build_tokenizer(args):
     elif args.tokenizer_type == 'Llama2Tokenizer':
         assert args.tokenizer_model is not None
         tokenizer = _Llama2Tokenizer(args.tokenizer_model)
+    elif args.tokenizer_type == 'CharLevelTokenizer':
+        tokenizer = _CharLevelTokenizer(vocab_size=512)
     elif args.tokenizer_type == 'NullTokenizer':
         assert args.vocab_size is not None
         tokenizer = _NullTokenizer(args.vocab_size)
@@ -553,6 +556,50 @@ class _Llama2Tokenizer(_SentencePieceTokenizer):
     @property
     def additional_special_tokens_ids(self):
         return None
+
+class _CharLevelTokenizer(AbstractTokenizer):
+    """Character Level Tokenizer"""
+
+    def __init__(self, vocab_size):
+        name = "CharLevelTokenizer"
+        super().__init__(name)
+        self._vocab_size = vocab_size
+        self.eod_id = 0
+        self.pad_id = 1
+
+    def clamp(self, n):
+        return max(32, min(n, self.vocab_size))
+
+    @property
+    def vocab_size(self):
+        return self._vocab_size
+
+    @property
+    def vocab(self):
+        raise NotImplementedError
+
+    @property
+    def inv_vocab(self):
+        raise NotImplementedError
+
+    def decode_token(self, token: int):
+        return str(chr(self.clamp(token)))
+
+    def tokenize(self, text: str):
+        return list(np.fromstring(text, dtype=np.uint8))
+
+    def tokenize_batch(self, text_batch: Union[List[str], str]):
+        if isinstance(text_batch, list):
+            return [self.tokenize(s) for s in text_batch]
+        else:
+            return self.tokenize(text_batch)
+
+    def detokenize(self, token_ids):
+        return "".join(list(map(self.decode_token, token_ids)))
+
+    @property
+    def eod(self):
+        return self.eod_id
 
 class _NullTokenizer:
     def __init__(self, vocab_size):
